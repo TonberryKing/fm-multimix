@@ -58,6 +58,7 @@ int detection_misses=10;
 int filter_sub=0;
 struct circ_buf circ_buffer;
 int fast_mode=0;
+int squelch=0;
 
 void mix_signal(demodproc* proc, uint8_t* inbuf, uint8_t* outbuf)
 {
@@ -161,7 +162,7 @@ int read_data()
 					}
 				}
 				check_processes(results, freqs, freq_count, samples_read,
-					 	detection_misses, center_freq, filter_sub, fast_mode); 
+						detection_misses, center_freq, filter_sub, fast_mode, squelch);
 			}
 			skip = 120;
 		}
@@ -257,7 +258,7 @@ int main(int argc, char *argv[])
 	int running =1;
 	int opt;
 
-	while ((opt = getopt(argc, argv, "f:t:m:vsS")) != -1) 
+	while ((opt = getopt(argc, argv, "f:t:m:vsSl:")) != -1)
 	{
 		switch (opt) 
 		{
@@ -278,6 +279,9 @@ int main(int argc, char *argv[])
 				break;
 			case 'S':
 				fast_mode=1;
+				break;
+			case 'l':
+				squelch = (int)atoi(optarg);
 				break;
 			default:
 				arg_msg();

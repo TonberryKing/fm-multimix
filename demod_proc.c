@@ -26,6 +26,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <time.h>
 #include "fft.h"
 #include "demod_proc.h"
 
@@ -33,7 +34,7 @@ demodproc* bin_list[FFT_LEN];
 demodproc* short_proc_list[FFT_LEN];
 int process_count=0;
 
-int create_process(int bin, long long int totalread, int filter_sub, int center_freq, int fast)
+int create_process(int bin, long long int totalread, int filter_sub, int center_freq, int fast, int squelch)
 {
 	int i;
 	int in[2], out[2], pid;	
@@ -45,6 +46,10 @@ int create_process(int bin, long long int totalread, int filter_sub, int center_
 	{
 		char cmdstring[255];
 		int filt_bot;
+		char datestr[200];
+		time_t t;
+		struct tm *tmp;
+
 		//child process
 		close(STDIN_FILENO);
 		close(STDOUT_FILENO);
@@ -65,29 +70,51 @@ int create_process(int bin, long long int totalread, int filter_sub, int center_
 		{
 			filt_bot=0;
 		}
+
+		t = time(NULL);
+		tmp = gmtime(&t);
+		if (tmp == NULL) {
+			perror("gmtime");
+			exit(EXIT_FAILURE);
+		}
+		// ISO8601 date/time format
+		if (strftime(datestr, sizeof(datestr), "%FT%TZ", tmp) == 0) {
+			fprintf(stderr, "strftime returned 0");
+			exit(EXIT_FAILURE);
+		}
+
 		if(fast)
 		{
-			snprintf(cmdstring, 255, "rtl_fm -s 22050 -P -C -i 46 -l 150 - |"
-					"sox -t raw -r 22050 -e signed-integer -b 16 -c 1 -L - "
-					"%d_%lld.wav",
-					(bin-(FFT_LEN/2))*SAMP_RATE/FFT_LEN+center_freq,
-					totalread/SAMP_RATE/2);
+			char squelch_str[20];
+			char filestr[255];
+			snprintf(filestr, 255, "%d_%s_%lld.pcm", (bin-(FFT_LEN/2))*SAMP_RATE/FFT_LEN+center_freq, datestr, totalread/SAMP_RATE/2);
+			snprintf(squelch_str, 20, "%d", squelch);
+			fprintf(stderr, "writing raw 22050Hz 16bit audio to %s\n", filestr);
+			execlp("rtl_fm", "rtl_fm", "-s", "22050", "-P", "-C", "-i", "46", "-t", "5", "-l", squelch_str, filestr, (char*)NULL);
+
+			perror("Failed to start child process");
+			exit(1);
 		}
 		else
 		{
-			snprintf(cmdstring, 255, "rtl_fm -s 22050 -P -C -i 46 -l 150 - |"
+			fprintf(stderr, "writing audio to %d_%s_%lld.wav\n", (bin-(FFT_LEN/2))*SAMP_RATE/FFT_LEN+center_freq, datestr, totalread/SAMP_RATE/2);
+			snprintf(cmdstring, 255, "rtl_fm -s 22050 -P -C -i 46 -l %d -t 5 - |"
 					"sox -t raw -r 22050 -e signed-integer -b 16 -c 1 -L - "
-					"-r 8000 %d_%lld.wav sinc %d-3000 -n 16 ",
+					"-r 8000 %d_%s_%lld.wav sinc %d-3000 -n 16 ",
+					squelch,
 					(bin-(FFT_LEN/2))*SAMP_RATE/FFT_LEN+center_freq,
+					datestr,
 					totalread/SAMP_RATE/2, filt_bot);
+
+			execl("/bin/sh", "sh", "-c", cmdstring , (char *)NULL);
+
+			fprintf(stderr,"Failed to start child process\n");
+			exit(1);
 		}
 
-		execl("/bin/sh", "sh", "-c", cmdstring , (char *)NULL);
-
-		fprintf(stderr,"Failed to start child process\n");
-		exit(1);
 	}
 
+	newproc->pid=pid;
 	newproc->inpipe = in[0];
 	newproc->outpipe = out[1];
 	newproc->bin = bin;
@@ -134,6 +161,7 @@ void end_process(demodproc* proc)
 	int i;
 	close(proc->outpipe);
 	close(proc->inpipe);
+	waitpid(proc->pid, NULL);
 	bin_list[proc->bin]=0;
 	free(proc);
 	
@@ -160,7 +188,7 @@ int get_process_count()
 }
 
 void check_processes(double* bins, int* freqs, int freqcount, 
-		long long int total_read, int misses, int center_freq, int filter_sub, int fast) 
+		long long int total_read, int misses, int center_freq, int filter_sub, int fast, int squelch)
 {
 	int i,j;
 	int miss =1;
@@ -178,7 +206,7 @@ void check_processes(double* bins, int* freqs, int freqcount,
 				{
 					fprintf(stderr, "Creating process to demodulate %d Hz\n", 
 							(freqs[i]-(FFT_LEN/2))*SAMP_RATE/FFT_LEN+center_freq);
-					create_process(freqs[i],total_read,filter_sub,center_freq, fast);
+					create_process(freqs[i],total_read,filter_sub,center_freq, fast, squelch);
 				}
 				miss =0;
 				bin_list[freqs[i]]->detection_misses=0;
