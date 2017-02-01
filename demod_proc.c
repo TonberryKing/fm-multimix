@@ -78,8 +78,7 @@ int create_process(int bin, long long int totalread, int filter_sub, int center_
 			perror("gmtime");
 			exit(EXIT_FAILURE);
 		}
-		// ISO8601 date/time format
-		if (strftime(datestr, sizeof(datestr), "%FT%TZ", tmp) == 0) {
+		if (strftime(datestr, sizeof(datestr), "%Y%m%d-%H%M%S", tmp) == 0) {
 			fprintf(stderr, "strftime returned 0");
 			exit(EXIT_FAILURE);
 		}
