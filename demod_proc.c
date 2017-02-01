@@ -35,7 +35,7 @@ demodproc* bin_list[FFT_LEN];
 demodproc* short_proc_list[FFT_LEN];
 int process_count=0;
 
-int create_process(int bin, long long int totalread, int filter_sub, int center_freq, int fast, int squelch)
+int create_process(int bin, long long int totalread, int filter_sub, int center_freq, int fast, int squelch, char* command)
 {
 	int i;
 	int in[2], out[2], pid;	
@@ -45,8 +45,6 @@ int create_process(int bin, long long int totalread, int filter_sub, int center_
 
 	if((pid=fork()) == 0)
 	{
-		char cmdstring[255];
-		int filt_bot;
 		char datestr[200];
 		time_t t;
 		struct tm *tmp;
@@ -63,14 +61,6 @@ int create_process(int bin, long long int totalread, int filter_sub, int center_
 
 		close(in[0]);
 		close(out[1]);
-		if(filter_sub)
-		{
-			filt_bot=300;
-		}
-		else
-		{
-			filt_bot=0;
-		}
 
 		t = time(NULL);
 		tmp = gmtime(&t);
@@ -83,35 +73,48 @@ int create_process(int bin, long long int totalread, int filter_sub, int center_
 			exit(EXIT_FAILURE);
 		}
 
-		if(fast)
+		int frequency = (bin-(FFT_LEN/2))*SAMP_RATE/FFT_LEN+center_freq;
+		long long int elapsed = totalread/SAMP_RATE/2;
+
+		if(command)
+		{
+			char frequency_str[20];
+			char elapsed_str[20];
+			snprintf(frequency_str, 20, "%d", frequency);
+			snprintf(elapsed_str, 20, "%lld", elapsed);
+
+			fprintf(stderr, "Starting decoder: %s %s %s\n", command, frequency_str, elapsed_str);
+			execlp(command, command, frequency_str, elapsed_str, (char*)NULL);
+		}
+		else if(fast)
 		{
 			char squelch_str[20];
 			char filestr[255];
-			snprintf(filestr, 255, "%d_%s_%lld.pcm", (bin-(FFT_LEN/2))*SAMP_RATE/FFT_LEN+center_freq, datestr, totalread/SAMP_RATE/2);
+			snprintf(filestr, 255, "%d_%s_%lld.pcm", frequency, datestr, elapsed);
 			snprintf(squelch_str, 20, "%d", squelch);
-			fprintf(stderr, "writing raw 22050Hz 16bit audio to %s\n", filestr);
-			execlp("rtl_fm", "rtl_fm", "-s", "22050", "-P", "-C", "-i", "46", "-t", "5", "-l", squelch_str, filestr, (char*)NULL);
 
-			perror("Failed to start child process");
-			exit(1);
+			fprintf(stderr, "Writing raw 22050Hz 16bit audio to %s\n", filestr);
+			execlp("rtl_fm", "rtl_fm", "-s", "22050", "-P", "-C", "-i", "46", "-t", "5", "-l", squelch_str, filestr, (char*)NULL);
 		}
 		else
 		{
-			fprintf(stderr, "writing audio to %d_%s_%lld.wav\n", (bin-(FFT_LEN/2))*SAMP_RATE/FFT_LEN+center_freq, datestr, totalread/SAMP_RATE/2);
-			snprintf(cmdstring, 255, "rtl_fm -s 22050 -P -C -i 46 -l %d -t 5 - |"
-					"sox -t raw -r 22050 -e signed-integer -b 16 -c 1 -L - "
-					"-r 8000 %d_%s_%lld.wav sinc %d-3000 -n 16 ",
-					squelch,
-					(bin-(FFT_LEN/2))*SAMP_RATE/FFT_LEN+center_freq,
-					datestr,
-					totalread/SAMP_RATE/2, filt_bot);
+			char cmdstring[255];
+			char filestr[255];
+			snprintf(filestr, 255, "%d_%s_%lld.wav", frequency, datestr, elapsed);
+			snprintf(cmdstring, 255, "rtl_fm -s 22050 -P -C -i 46 -l %d -t 5 - | "
+			                          "sox -t raw -r 22050 -e signed-integer -b 16 -c 1 -L - "
+			                          "-r 8000 %s sinc %d-3000 -n 16",
+				squelch,
+				filestr,
+				(filter_sub ? 300 : 0)
+			);
 
-			execl("/bin/sh", "sh", "-c", cmdstring , (char *)NULL);
-
-			fprintf(stderr,"Failed to start child process\n");
-			exit(1);
+			fprintf(stderr, "Writing audio to %s\n", filestr);
+			execl("/bin/sh", "sh", "-c", cmdstring, (char *)NULL);
 		}
 
+		fprintf(stderr, "Failed to start child process\n");
+		exit(1);
 	}
 
 	newproc->pid=pid;
@@ -187,8 +190,8 @@ int get_process_count()
 	return process_count;
 }
 
-void check_processes(double* bins, int* freqs, int freqcount, 
-		long long int total_read, int misses, int center_freq, int filter_sub, int fast, int squelch)
+void check_processes(double* bins, int* freqs, int freqcount,
+		long long int total_read, int misses, int center_freq, int filter_sub, int fast, int squelch, char* command)
 {
 	int i,j;
 	int miss =1;
@@ -206,7 +209,7 @@ void check_processes(double* bins, int* freqs, int freqcount,
 				{
 					fprintf(stderr, "Creating process to demodulate %d Hz\n", 
 							(freqs[i]-(FFT_LEN/2))*SAMP_RATE/FFT_LEN+center_freq);
-					create_process(freqs[i],total_read,filter_sub,center_freq, fast, squelch);
+					create_process(freqs[i], total_read, filter_sub, center_freq, fast, squelch, command);
 				}
 				miss =0;
 				bin_list[freqs[i]]->detection_misses=0;
