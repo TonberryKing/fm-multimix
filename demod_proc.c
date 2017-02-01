@@ -27,6 +27,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <time.h>
+#include <sys/wait.h>
 #include "fft.h"
 #include "demod_proc.h"
 
@@ -161,7 +162,7 @@ void end_process(demodproc* proc)
 	int i;
 	close(proc->outpipe);
 	close(proc->inpipe);
-	waitpid(proc->pid, NULL);
+	waitpid(proc->pid, NULL, 0);
 	bin_list[proc->bin]=0;
 	free(proc);
 	
