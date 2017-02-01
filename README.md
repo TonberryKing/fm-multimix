@@ -19,6 +19,15 @@ To use this on very slow systems it helps to increase the priority of rtl_sdr an
 This approach requires ```pv``` to also be installed. 
 With the priority increase and buffering the Raspberry PI for example can demodulate 2 to 3 channels at the same time as long as they do not transmit for many minutes at a time.
 
+### Custom Decoder
+
+Instead of saving each channel to a file, a custom decoder can be specified. The command receives two arguments: The frequency and the time elapsed since the start. The following example shows a simple wrapper script to decode AFSK1200 on the fly:
+
+	$ cat decode.sh
+	#!/bin/sh
+	rtl_fm -f $1 -s 22050 -P -C -i 46 -t 5 - | multimon-ng -t raw -c -a AFSK1200 -A >$1-$2.log
+	$ rtl_sdr -f ... | fm_multimix -f ... -c ./decode.sh
+
 
 Warning
 -------

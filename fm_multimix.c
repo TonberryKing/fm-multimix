@@ -59,6 +59,7 @@ int filter_sub=0;
 struct circ_buf circ_buffer;
 int fast_mode=0;
 int squelch=0;
+char* command=0;
 
 void mix_signal(demodproc* proc, uint8_t* inbuf, uint8_t* outbuf)
 {
@@ -162,7 +163,7 @@ int read_data()
 					}
 				}
 				check_processes(results, freqs, freq_count, samples_read,
-						detection_misses, center_freq, filter_sub, fast_mode, squelch);
+						detection_misses, center_freq, filter_sub, fast_mode, squelch, command);
 			}
 			skip = 120;
 		}
@@ -247,8 +248,9 @@ void arg_msg()
 									"\tbefore recording will stop (default 10, approx 10 seconds)]\n"
 									"\t[-s Filter out sub audible (<300 Hz) tones.]\n"	
 									"\t[-S Speed boost. Turns of nice features like output filtering\n"
+									"\tin an attempt to improve speed. (default off)]\n"
 									"\t[-l Squelch level passed to rtl-fm. (default 0)]\n"
-									"\tin an attempt to improve speed. (defualt off)]\n"	
+									"\t[-c The command which is executed to decode a channel]\n"
 			);
 	exit(1);
 }
@@ -259,7 +261,7 @@ int main(int argc, char *argv[])
 	int running =1;
 	int opt;
 
-	while ((opt = getopt(argc, argv, "f:t:m:vsSl:")) != -1)
+	while ((opt = getopt(argc, argv, "f:t:m:vsSl:c:")) != -1)
 	{
 		switch (opt) 
 		{
@@ -283,6 +285,9 @@ int main(int argc, char *argv[])
 				break;
 			case 'l':
 				squelch = (int)atoi(optarg);
+				break;
+			case 'c':
+				command = optarg;
 				break;
 			default:
 				arg_msg();
@@ -340,7 +345,11 @@ int main(int argc, char *argv[])
 	{
 		arg_msg();
 	}
-		
+
+	if(command && (filter_sub || squelch)) {
+		fprintf(stderr, "Filters can not be applied when a custom decoder is used.\n");
+		exit(1);
+	}
 
 	for(i=0;i<freq_count;i++)
 	{
